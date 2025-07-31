@@ -47,17 +47,54 @@ let searchMode=false;
 function generateShortCode(){const c='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';let code='';for(let i=0;i<4;i++){code+=c.charAt(Math.floor(Math.random()*c.length));}return code;}
 function showMessage(text,type){const m=document.getElementById('message');m.textContent=text;m.className='';m.classList.add('show',type);setTimeout(()=>m.classList.remove('show',type),2000);}
 function broadcast(data){connections.forEach(conn=>conn.send(data));}
-function initPeer(){const code=generateShortCode();peer=new Peer(code);peer.on('open',id=>{peerReady=true;});peer.on('connection',conn=>{connections.push(conn);conn.on('data',handleIncomingData);
-  conn.send({type:"syncAll",edges:edgeStates,hostCircles:hostCircleStates,playerCircles:playerCircleStates});
+function initPeer(){const code=generateShortCode();peer=new Peer(code);peer.on('open',id=>{peerReady=true;});peer.on('connection',conn=>{
+  connections.push(conn);
+  conn.on('data',handleIncomingData);
+  // Immediately broadcast full state to the new connection AND others
+  const fullState = {type:"syncAll",edges:edgeStates,hostCircles:hostCircleStates,playerCircles:playerCircleStates};
+  conn.send(fullState);
+  // Ensure everyone has same state when new player joins
+  broadcast(fullState);
 });}
 initPeer();
-function handleIncomingData(data){if(data.type==="syncAll"){edgeStates=data.edges;updateEdgesUI();hostCircleStates=data.hostCircles;playerCircleStates=data.playerCircles;updateCirclesUI();}
-if(data.type==="toggleEdge"){edgeStates[data.edgeId]=data.highlighted;updateEdgesUI();}
-if(data.type==="toggleCircle"){if(isHost){playerCircleStates[data.circleId]=data.highlighted;}else{hostCircleStates[data.circleId]=data.highlighted;}updateCirclesUI();}}
+function handleIncomingData(data){
+  if(data.type==="syncAll"){
+    edgeStates=data.edges;updateEdgesUI();
+    hostCircleStates=data.hostCircles;playerCircleStates=data.playerCircles;
+    updateCirclesUI();
+  }
+  if(data.type==="toggleEdge"){
+    edgeStates[data.edgeId]=data.highlighted;
+    updateEdgesUI();
+  }
+  if(data.type==="toggleCircle"){
+    if(isHost){playerCircleStates[data.circleId]=data.highlighted;}else{hostCircleStates[data.circleId]=data.highlighted;}
+    updateCirclesUI();
+  }
+}
 function updateEdgesUI(){for(const edgeId in edgesMap){edgesMap[edgeId].setAttribute("stroke-width",edgeStates[edgeId]?"6":"2");}}
 function updateCirclesUI(){const visibleCircles=isHost?hostCircleStates:playerCircleStates;for(const circleId in hostCircleStates){const circleEl=document.getElementById(circleId);if(!circleEl)continue;let strokeColor="transparent";if(visibleCircles[circleId])strokeColor="black";if(hostCircleStates[circleId]&&playerCircleStates[circleId])strokeColor="red";circleEl.setAttribute("stroke",strokeColor);}}
-document.getElementById('createSessionBtn').addEventListener('click',()=>{if(!peerReady)return alert("Peer not ready yet. Please wait a second.");isHost=true;document.getElementById('sessionInfo').textContent=`Your Session Code: ${peer.id}`;document.getElementById('saveBtn').style.display='block';document.getElementById('loadBtn').style.display='block';document.getElementById('resyncBtn').style.display='block';});
-document.getElementById('joinSessionBtn').addEventListener('click',()=>{const code=document.getElementById('sessionCodeInput').value.trim();if(!code)return alert("Enter a session code!");if(!peerReady)return alert("Peer not ready yet. Please wait a second.");const conn=peer.connect(code);conn.on('open',()=>{connections.push(conn);document.getElementById('sessionInfo').textContent=`Connected to session: ${code}`;});conn.on('data',handleIncomingData);});
+document.getElementById('createSessionBtn').addEventListener('click',()=>{
+  if(!peerReady)return alert("Peer not ready yet. Please wait a second.");
+  isHost=true;
+  document.getElementById('sessionInfo').textContent=`Your Session Code: ${peer.id}`;
+  document.getElementById('saveBtn').style.display='block';
+  document.getElementById('loadBtn').style.display='block';
+  document.getElementById('resyncBtn').style.display='block';
+});
+document.getElementById('joinSessionBtn').addEventListener('click',()=>{
+  const code=document.getElementById('sessionCodeInput').value.trim();
+  if(!code)return alert("Enter a session code!");
+  if(!peerReady)return alert("Peer not ready yet. Please wait a second.");
+  const conn=peer.connect(code);
+  conn.on('open',()=>{
+    connections.push(conn);
+    document.getElementById('sessionInfo').textContent=`Connected to session: ${code}`;
+    // Trigger full sync request when joining
+    conn.send({type:"requestSync"});
+  });
+  conn.on('data',handleIncomingData);
+});
 const svg=document.getElementById('hexMap');const size=60,marginInches=0.5,pageWidthIn=8.5,pageHeightIn=11,dpi=96;
 const marginPx=marginInches*dpi,pageWidthPx=pageWidthIn*dpi,pageHeightPx=pageHeightIn*dpi;
 const drawWidth=pageWidthPx-2*marginPx,drawHeight=pageHeightPx-2*marginPx;
