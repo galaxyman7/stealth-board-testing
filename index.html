@@ -16,7 +16,7 @@
     #sessionCodeInput{padding:5px;}
     #searchToggle{display:block;margin:10px auto 20px;padding:8px 16px;font-size:14px;background:#555;color:white;border:none;border-radius:4px;cursor:pointer;}
     #searchToggle.active{background:#2a8;}
-    #printBtn,#saveBtn,#loadBtn{display:block;margin:10px auto;padding:10px 20px;font-size:16px;background:#4CAF50;color:white;border:none;border-radius:5px;cursor:pointer;}
+    #printBtn,#saveBtn,#loadBtn,#resyncBtn{display:block;margin:10px auto;padding:10px 20px;font-size:16px;background:#4CAF50;color:white;border:none;border-radius:5px;cursor:pointer;}
     #message{position:fixed;bottom:60px;left:50%;transform:translateX(-50%);padding:15px 30px;border-radius:8px;font-size:20px;font-weight:bold;color:#fff;opacity:0;pointer-events:none;}
     #message.show{animation:slideFade 2s ease forwards;}
     #message.found{background:rgba(0,128,0,0.85);}
@@ -37,6 +37,7 @@
 <svg id="hexMap"></svg>
 <button id="saveBtn" style="display:none;">Save Game</button>
 <button id="loadBtn" style="display:none;">Load Game</button>
+<button id="resyncBtn" style="display:none;">Resync Clients</button>
 <button id="printBtn">Print / Export PDF</button>
 <div id="message"></div>
 <script>
@@ -47,7 +48,6 @@ function generateShortCode(){const c='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';let 
 function showMessage(text,type){const m=document.getElementById('message');m.textContent=text;m.className='';m.classList.add('show',type);setTimeout(()=>m.classList.remove('show',type),2000);}
 function broadcast(data){connections.forEach(conn=>conn.send(data));}
 function initPeer(){const code=generateShortCode();peer=new Peer(code);peer.on('open',id=>{peerReady=true;});peer.on('connection',conn=>{connections.push(conn);conn.on('data',handleIncomingData);
-  // Always send full sync immediately to new connection
   conn.send({type:"syncAll",edges:edgeStates,hostCircles:hostCircleStates,playerCircles:playerCircleStates});
 });}
 initPeer();
@@ -56,7 +56,7 @@ if(data.type==="toggleEdge"){edgeStates[data.edgeId]=data.highlighted;updateEdge
 if(data.type==="toggleCircle"){if(isHost){playerCircleStates[data.circleId]=data.highlighted;}else{hostCircleStates[data.circleId]=data.highlighted;}updateCirclesUI();}}
 function updateEdgesUI(){for(const edgeId in edgesMap){edgesMap[edgeId].setAttribute("stroke-width",edgeStates[edgeId]?"6":"2");}}
 function updateCirclesUI(){const visibleCircles=isHost?hostCircleStates:playerCircleStates;for(const circleId in hostCircleStates){const circleEl=document.getElementById(circleId);if(!circleEl)continue;let strokeColor="transparent";if(visibleCircles[circleId])strokeColor="black";if(hostCircleStates[circleId]&&playerCircleStates[circleId])strokeColor="red";circleEl.setAttribute("stroke",strokeColor);}}
-document.getElementById('createSessionBtn').addEventListener('click',()=>{if(!peerReady)return alert("Peer not ready yet. Please wait a second.");isHost=true;document.getElementById('sessionInfo').textContent=`Your Session Code: ${peer.id}`;document.getElementById('saveBtn').style.display='block';document.getElementById('loadBtn').style.display='block';});
+document.getElementById('createSessionBtn').addEventListener('click',()=>{if(!peerReady)return alert("Peer not ready yet. Please wait a second.");isHost=true;document.getElementById('sessionInfo').textContent=`Your Session Code: ${peer.id}`;document.getElementById('saveBtn').style.display='block';document.getElementById('loadBtn').style.display='block';document.getElementById('resyncBtn').style.display='block';});
 document.getElementById('joinSessionBtn').addEventListener('click',()=>{const code=document.getElementById('sessionCodeInput').value.trim();if(!code)return alert("Enter a session code!");if(!peerReady)return alert("Peer not ready yet. Please wait a second.");const conn=peer.connect(code);conn.on('open',()=>{connections.push(conn);document.getElementById('sessionInfo').textContent=`Connected to session: ${code}`;});conn.on('data',handleIncomingData);});
 const svg=document.getElementById('hexMap');const size=60,marginInches=0.5,pageWidthIn=8.5,pageHeightIn=11,dpi=96;
 const marginPx=marginInches*dpi,pageWidthPx=pageWidthIn*dpi,pageHeightPx=pageHeightIn*dpi;
@@ -79,6 +79,9 @@ const searchToggle=document.getElementById('searchToggle');
 searchToggle.addEventListener('click',()=>{searchMode=!searchMode;searchToggle.classList.toggle('active',searchMode);searchToggle.textContent=searchMode?"Search Mode":"Placement Mode";});
 document.getElementById('saveBtn').addEventListener('click',()=>{if(!isHost)return;const data=JSON.stringify({edges:edgeStates,hostCircles:hostCircleStates,playerCircles:playerCircleStates});const blob=new Blob([data],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='stealth-save.json';a.click();URL.revokeObjectURL(url);});
 document.getElementById('loadBtn').addEventListener('click',()=>{if(!isHost)return;const input=document.createElement('input');input.type='file';input.accept='application/json';input.onchange=e=>{const file=e.target.files[0];const reader=new FileReader();reader.onload=()=>{const data=JSON.parse(reader.result);edgeStates=data.edges;hostCircleStates=data.hostCircles;playerCircleStates=data.playerCircles;updateEdgesUI();updateCirclesUI();broadcast({type:"syncAll",edges:edgeStates,hostCircles:hostCircleStates,playerCircles:playerCircleStates});};reader.readAsText(file);};input.click();});
+// Resync button sends current state to all clients
+const resyncBtn=document.getElementById('resyncBtn');
+resyncBtn.addEventListener('click',()=>{if(!isHost)return;broadcast({type:"syncAll",edges:edgeStates,hostCircles:hostCircleStates,playerCircles:playerCircleStates});showMessage("Resynced!","found");});
 document.getElementById('printBtn').addEventListener('click',()=>{const {jsPDF}=window.jspdf;const svgData=new XMLSerializer().serializeToString(svg);const svgBlob=new Blob([svgData],{type:"image/svg+xml;charset=utf-8"});const url=URL.createObjectURL(svgBlob);const img=new Image();img.onload=function(){const canvas=document.createElement("canvas");const ctx=canvas.getContext("2d");canvas.width=svg.clientWidth;canvas.height=svg.clientHeight;ctx.drawImage(img,0,0);const imgData=canvas.toDataURL("image/png");const pdf=new jsPDF({orientation:'portrait',unit:'in',format:'letter'});const pageWidth=8.5;const pageHeight=11;const margin=0.5;const usableWidth=pageWidth-2*margin;const usableHeight=pageHeight-2*margin;const imgWidth=canvas.width/dpi;const imgHeight=canvas.height/dpi;let scale=Math.min(usableWidth/imgWidth,usableHeight/imgHeight);const finalWidth=imgWidth*scale;const finalHeight=imgHeight*scale;const xOffset=(pageWidth-finalWidth)/2;const yOffset=(pageHeight-finalHeight)/2;pdf.addImage(imgData,'PNG',xOffset,yOffset,finalWidth,finalHeight);pdf.save('stealth-board.pdf');URL.revokeObjectURL(url);};img.src=url;});
 </script>
 </body>
