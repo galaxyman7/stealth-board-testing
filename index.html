@@ -473,4 +473,17 @@ document.getElementById('printBtn').addEventListener('click', () => {
     const usableHeight = pageHeight - 2 * margin;
     const imgWidth = canvas.width / dpi;
     const imgHeight = canvas.height / dpi;
-    let scale = Math.min(usableWidth / imgWidth, usableHeight /
+    let scale = Math.min(usableWidth / imgWidth, usableHeight /imgHeight);
+    const finalWidth = imgWidth * scale;
+    const finalHeight = imgHeight * scale;
+    const xOffset = (pageWidth - finalWidth) / 2;
+    const yOffset = (pageHeight - finalHeight) / 2;
+    pdf.addImage(imgData, 'PNG', xOffset, yOffset, finalWidth, finalHeight);
+    pdf.save('stealth-board.pdf');
+    URL.revokeObjectURL(url);
+  };
+  img.src = url;
+});
+</script>
+</body>
+</html>
